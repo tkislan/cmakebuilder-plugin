@@ -4,17 +4,10 @@ import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
-import hudson.Proc;
-import hudson.Util;
 import hudson.matrix.MatrixProject;
-import hudson.model.AbstractBuild;
-import hudson.model.AbstractProject;
-import hudson.model.BuildListener;
-import hudson.model.FreeStyleProject;
-import hudson.model.Node;
-import hudson.model.TaskListener;
-import hudson.tasks.Builder;
+import hudson.model.*;
 import hudson.tasks.BuildStepDescriptor;
+import hudson.tasks.Builder;
 import hudson.util.FormValidation;
 import net.sf.json.JSONObject;
 import org.kohsuke.stapler.AncestorInPath;
@@ -23,18 +16,11 @@ import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
 
 import javax.servlet.ServletException;
-
-import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintStream;
-import java.io.PrintWriter;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 /**
  * Executes <tt>cmake</tt> as the build process.
@@ -48,19 +34,19 @@ public class CmakeBuilder extends Builder {
 
 	private static final String CMAKE = "cmake";
 	
-	private String sourceDir;
-    private String buildDir;
-    private String installDir;
-    private String buildType;
-    private String otherBuildType;
-    private String generator;
-    private String makeCommand;
-    private String installCommand;
-    private String preloadScript;
-    private String cmakeArgs;
-    private String projectCmakePath;
-    private boolean cleanBuild;
-    private boolean cleanInstallDir;
+	final private String sourceDir;
+    final private String buildDir;
+    final private String installDir;
+    final private String buildType;
+    final private String otherBuildType;
+    final private String generator;
+    final private String makeCommand;
+    final private String installCommand;
+    final private String preloadScript;
+    final private String cmakeArgs;
+    final private String projectCmakePath;
+    final private boolean cleanBuild;
+    final private boolean cleanInstallDir;
 
     private CmakeBuilderImpl builderImpl;
 
@@ -145,52 +131,71 @@ public class CmakeBuilder extends Builder {
     public String getProjectCmakePath() {
     	return this.projectCmakePath;
     }
-    
-    public boolean perform(AbstractBuild build, Launcher launcher, BuildListener listener) throws InterruptedException, IOException {
-    	listener.getLogger().println("MODULE: " + build.getModuleRoot());
-    	
-        final EnvVars envs = build.getEnvironment(listener);
-//        final Set<String> keys = envs.keySet();
-//    	for (String key : keys) {
-//    		listener.getLogger().println("Key : " + key);
-//    		cmakeCall   = cmakeCall.replaceAll("\\$" + key, envs.get(key));
-//    	}
 
-        final FilePath workSpace = build.getProject().getWorkspace();
-        
+    public boolean perform(AbstractBuild build, Launcher launcher, BuildListener listener) throws InterruptedException, IOException {
+        final EnvVars envs = build.getEnvironment(listener);
+
+        final String eSourceDir = EnvVarReplacer.replace(sourceDir, envs);
+        final String eBuildDir = EnvVarReplacer.replace(buildDir, envs);
+        final String eInstallDir = EnvVarReplacer.replace(installDir, envs);
+        final String eOtherBuildType = EnvVarReplacer.replace(otherBuildType, envs);
+        final String eGenerator = EnvVarReplacer.replace(generator, envs);
+        final String eMakeCommand = EnvVarReplacer.replace(makeCommand, envs);
+        final String eInstallCommand = EnvVarReplacer.replace(installCommand, envs);
+        final String ePreloadScript = EnvVarReplacer.replace(preloadScript, envs);
+        final String eCmakeArgs = EnvVarReplacer.replace(cmakeArgs, envs);
+        final String eProjectCmakePath = EnvVarReplacer.replace(projectCmakePath, envs);
+
+    	listener.getLogger().println("MODULE: " + build.getModuleRoot());
+        listener.getLogger().println("Custom CMAKE BUILD PLUGIN");
+    	
+        listener.getLogger().println("Printing environment variables");
+        for (Map.Entry<String, String> entry : envs.entrySet()) {
+            listener.getLogger().println("Key: " + entry.getKey() + ". Value: " + entry.getValue());
+        }
+
+        final Map<String, String> buildEnvs = build.getBuildVariables();
+        listener.getLogger().println("Printing build environment variables");
+        for (Map.Entry<String, String> entry : buildEnvs.entrySet()) {
+            listener.getLogger().println("Key: " + entry.getKey() + ". Value: " + entry.getValue());
+        }
+
+        final FilePath workSpace = build.getWorkspace();
+
         String theSourceDir;
     	String theInstallDir;
     	String theBuildDir = this.buildDir;
     	try {
-    		theBuildDir = prepareBuildDir(listener, envs, workSpace);    			
-    		theSourceDir = prepareSourceDir(envs, workSpace);
-    		theInstallDir = prepareInstallDir(listener, envs, workSpace);
+    		theBuildDir = prepareBuildDir(eBuildDir, listener, envs, workSpace);
+    		theSourceDir = prepareSourceDir(eSourceDir, envs, workSpace);
+    		theInstallDir = prepareInstallDir(eInstallDir, listener, envs, workSpace);
     	} catch (IOException ioe) {
     		listener.getLogger().println(ioe.getMessage());
     		return false;
     	}
-        String theBuildType = prepareBuildType();
+        String theBuildType = prepareBuildType(eOtherBuildType);
 
-    	listener.getLogger().println("Build   dir  : " + theBuildDir.toString());
-    	listener.getLogger().println("Source  dir  : " + theSourceDir.toString());
-    	listener.getLogger().println("Install dir  : " + theInstallDir.toString());
-    	String cmakeCall = prepareCmakeCall(build, listener, envs,
-				theSourceDir, theInstallDir, theBuildType);
-    	listener.getLogger().println("CMake call : " + cmakeCall);
+    	listener.getLogger().println("Build   dir  : " + theBuildDir);
+    	listener.getLogger().println("Source  dir  : " + theSourceDir);
+    	listener.getLogger().println("Install dir  : " + theInstallDir);
 
-    	final CmakeLauncher cmakeLauncher = 
-    		new CmakeLauncher(launcher, envs, workSpace, listener, theBuildDir);
+    	final CmakeLauncher cmakeLauncher = new CmakeLauncher(launcher, envs, workSpace, listener, theBuildDir);
     	
     	try {
-    		if (!cmakeLauncher.launchCmake(cmakeCall)) {
+            if (!cmakeLauncher.launchCmake(
+                    checkCmake(eProjectCmakePath, build.getBuiltOn(), listener, envs),
+                    eGenerator,
+                    ePreloadScript,
+                    theSourceDir,
+                    theInstallDir,
+                    theBuildType,
+                    eCmakeArgs)) return false;
+
+    		if (!cmakeLauncher.launchMake(eMakeCommand)) {
     			return false;
     		}
     		
-    		if (!cmakeLauncher.launchMake(getMakeCommand())) {
-    			return false;
-    		}
-    		
-    		return cmakeLauncher.launchInstall(installDir, getInstallCommand());
+    		return cmakeLauncher.launchInstall(theInstallDir, eInstallCommand);
 		} catch (IOException e) {
 			e.printStackTrace();
 		} catch (InterruptedException ie) {
@@ -199,53 +204,38 @@ public class CmakeBuilder extends Builder {
 		return false;
     }
 
-	private String prepareCmakeCall(AbstractBuild build,
-			BuildListener listener, EnvVars envs, String theSourceDir,
-			String theInstallDir, String theBuildType) throws IOException,
-			InterruptedException {
-		String cmakeBin = checkCmake(build.getBuiltOn(), listener, envs);
-    	String cmakeCall = 
-    		builderImpl.buildCMakeCall(cmakeBin, 
-    				this.generator,
-    				this.preloadScript, 
-    				theSourceDir, 
-    				theInstallDir, 
-    				theBuildType, EnvVarReplacer.replace(cmakeArgs, envs));
-    	return EnvVarReplacer.replace(cmakeCall, envs);
-	}
-
-	private String prepareBuildType() {
-        if ((this.otherBuildType != null) && (this.otherBuildType.length() > 0)) {
-            return this.otherBuildType;
+	private String prepareBuildType(String eOtherBuildType) {
+        if ((eOtherBuildType != null) && (eOtherBuildType.length() > 0)) {
+            return eOtherBuildType;
         }
-		return this.buildType;
+		return buildType;
 	}
 
-	private String prepareInstallDir(BuildListener listener, EnvVars envs,
-			final FilePath workSpace) throws IOException {
+	private String prepareInstallDir(String eInstallDir, BuildListener listener, EnvVars envs, final FilePath workSpace) throws IOException {
 		if (this.cleanInstallDir) {
-			listener.getLogger().println("Wiping out install Dir... " + this.installDir);
-			return getCmakeBuilderImpl().preparePath(workSpace, envs, this.installDir,
+			listener.getLogger().println("Wiping out install Dir... " + eInstallDir);
+			return getCmakeBuilderImpl().preparePath(workSpace, envs, eInstallDir,
 					CmakeBuilderImpl.PreparePathOptions.CREATE_NEW_IF_EXISTS);
 		} 
-		return getCmakeBuilderImpl().preparePath(workSpace, envs, this.installDir,
+		return getCmakeBuilderImpl().preparePath(workSpace, envs, eInstallDir,
 				CmakeBuilderImpl.PreparePathOptions.CREATE_IF_NOT_EXISTING);
 	}
 
-	private String prepareSourceDir(EnvVars envs, final FilePath workSpace)
+	private String prepareSourceDir(String eSourceDir, EnvVars envs, final FilePath workSpace)
 			throws IOException {
-		return getCmakeBuilderImpl().preparePath(workSpace, envs, this.sourceDir,
+		return getCmakeBuilderImpl().preparePath(workSpace, envs, eSourceDir,
 				CmakeBuilderImpl.PreparePathOptions.CHECK_PATH_EXISTS);
 	}
 
-	private String prepareBuildDir(BuildListener listener, EnvVars envs,
-			final FilePath workSpace) throws IOException {
+	private String prepareBuildDir(String eBuildDir, BuildListener listener, EnvVars envs, final FilePath workSpace)
+            throws IOException
+    {
 		if (this.cleanBuild) {
-			listener.getLogger().println("Cleaning build Dir... " + this.buildDir);
-			return getCmakeBuilderImpl().preparePath(workSpace, envs, this.buildDir, 
+			listener.getLogger().println("Cleaning build Dir... " + eBuildDir);
+			return getCmakeBuilderImpl().preparePath(workSpace, envs, eBuildDir,
 					CmakeBuilderImpl.PreparePathOptions.CREATE_NEW_IF_EXISTS);
 		}
-		return getCmakeBuilderImpl().preparePath(workSpace, envs, this.buildDir,
+		return getCmakeBuilderImpl().preparePath(workSpace, envs, eBuildDir,
 				CmakeBuilderImpl.PreparePathOptions.CREATE_IF_NOT_EXISTING);		
 	}
 
@@ -256,22 +246,22 @@ public class CmakeBuilder extends Builder {
 		return builderImpl;
 	}
 
-	private String checkCmake(Node node, BuildListener listener, EnvVars envs) throws IOException,
+	private String checkCmake(String eProjectCmakePath, Node node, BuildListener listener, EnvVars envs) throws IOException,
 			InterruptedException {
 		String cmakeBin = CMAKE;
         String cmakePath = getDescriptor().cmakePath();
         if (cmakePath != null && cmakePath.length() > 0) {
     		cmakeBin = cmakePath;
     	}
-        if (this.getProjectCmakePath() != null && this.getProjectCmakePath().length() > 0) {
-        	cmakeBin = EnvVarReplacer.replace(this.getProjectCmakePath(), envs);
+        if (eProjectCmakePath != null && eProjectCmakePath.length() > 0) {
+        	cmakeBin = eProjectCmakePath;
         }
         if (envs.containsKey(CMAKE_EXECUTABLE)) {
         	cmakeBin = envs.get(CMAKE_EXECUTABLE);
         }
-        Proc proc = node.createLauncher(listener).launch(cmakeBin + " -version", 
-        		new HashMap<String, String>(), listener.getLogger(), node.getRootPath());
-        proc.join();
+
+        node.createLauncher(listener).launch().cmds(cmakeBin, "-version").stdout(listener).pwd(node.getRootPath()).join();
+
 		return cmakeBin;
 	}
 

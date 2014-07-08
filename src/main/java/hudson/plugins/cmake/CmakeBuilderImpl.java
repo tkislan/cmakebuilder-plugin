@@ -2,13 +2,9 @@ package hudson.plugins.cmake;
 
 import hudson.FilePath;
 
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Map;
-import java.util.Set;
-
-import org.kohsuke.stapler.framework.io.IOException2;
 
 public class CmakeBuilderImpl {
 
@@ -76,32 +72,5 @@ public class CmakeBuilderImpl {
     	FilePath file = workSpace.child(path);
     	ppOption.process(file);
     	return file.getRemote();
-	}
-	
-	String buildCMakeCall(final String cmakeBin, 
-			final String generator,
-			final String preloadScript,
-			final String sourceDir, 
-			final String installDir, 
-			final String buildType, 
-			final String cmakeArgs) {
-		StringBuilder builder = new StringBuilder().append(cmakeBin).append(BLANK)
-			.append(createPreloadScriptArg(preloadScript)).append(BLANK)
-			.append("-G \"").append(generator).append("\"").append(BLANK);
-		if (!installDir.isEmpty()) {
-			builder.append(DCMAKE_INSTALL_PREFIX).append(installDir).append(BLANK);
-		}
-		builder.append(DCMAKE_BUILD_TYPE).append(buildType).append(BLANK)
-			.append(cmakeArgs).append(BLANK)
-			.append("\"").append(sourceDir).append("\"").append(BLANK);
-		return builder.toString();
-		
-	}
-	
-	private String createPreloadScriptArg(final String preloadScript) {
-		if (preloadScript == null || preloadScript.trim().isEmpty()) {
-			return "";
-		}
-		return " -C \"" + preloadScript.trim() + "\"";
 	}
 }
